@@ -1,6 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from "react";
 import { initializeApp } from "firebase/app";
-import { getAuth, signInAnonymously } from "firebase/auth";
+import {
+  getAuth,
+  signInAnonymously,
+  onAuthStateChanged,
+} from "firebase/auth";
+
 
 const firebaseConfig = {
   apiKey: "AIzaSyCKAmCVksowwhui8Q_HusnaiB-3GyYQZNU",
@@ -8,57 +13,81 @@ const firebaseConfig = {
   projectId: "my-portfolio-app-4f5d5",
 };
 
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
+const firebaseApp = initializeApp(firebaseConfig);
+const auth = getAuth(firebaseApp);
 
-function App() {
-  const [assetType, setAssetType] = useState('stocks');
-  const [value, setValue] = useState('');
-  const [month, setMonth] = useState(new Date().toISOString().slice(0,7)); // YYYY-MM
+export default function App() {
+  const [assetType, setAssetType] = useState("stocks");
+  const [value, setValue] = useState("");
+  const [month, setMonth] = useState(
+    new Date().toISOString().slice(0, 7) // YYYY-MM
+  );
+  const [loading, setLoading] = useState(false);
+  const [user, setUser] = useState(null);
 
-  async function ensureSignIn() {
-    if (!auth.currentUser) {
-      try {
-        await signInAnonymously(auth);
-      } catch (e) {
-        console.error('Sign-in failed', e);
-      }
-    }
-  }
-
-  async function saveEntry() {
-    await ensureSignIn();
-    const user = auth.currentUser;
-    const idToken = await user.getIdToken();
-
-    const payload = {
-      assetType, value: Number(value), month
-    };
-
-    const res = await fetch('https://portfolio-backend-qj1o.onrender.com/save', { // change to deployed backend later
-      method: 'POST',
-      headers: {
-        'Content-Type':'application/json',
-        'Authorization': 'Bearer ' + idToken
-      },
-      body: JSON.stringify(payload)
+  // -------------------------------------------------
+  // Keep Firebase auth alive (anonymous is fine)
+  // -------------------------------------------------
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (u) => {
+      if (u) setUser(u);
+      else signInAnonymously(auth).catch(console.error);
     });
+    return () => unsub();
+  }, []);
 
-    if (res.ok) {
-      alert('Saved!');
-      setValue('');
-    } else {
+  // -------------------------------------------------
+  // Save → ONLY through FastAPI backend
+  // -------------------------------------------------
+  const saveEntry = async () => {
+    if (!user) return alert("Not signed in");
+    if (!value || isNaN(Number(value))) return alert("Enter a valid number");
+
+    setLoading(true);
+    try {
+      const idToken = await user.getIdToken();
+
+      const payload = {
+        assetType,
+        value: Number(value),
+        month,
+      };
+
+      const res = await fetch(
+        "https://portfolio-backend-qj1o.onrender.com/save",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${idToken}`,
+          },
+          body: JSON.stringify(payload),
+        }
+      );
+
       const txt = await res.text();
-      alert('Error: ' + txt);
+      if (res.ok) {
+        alert("Saved!");
+        setValue("");
+      } else {
+        alert(`Error ${res.status}: ${txt}`);
+      }
+    } catch (e) {
+      alert("Network error: " + (e?.message || "Unknown error"));    } finally {
+      setLoading(false);
     }
-  }
+  };
 
   return (
-    <div style={{ padding: 20 }}>
+    <div style={{ padding: 20, fontFamily: "sans-serif" }}>
       <h2>Wealth Tracker — add monthly value</h2>
 
-      <label>Asset type:
-        <select value={assetType} onChange={e=>setAssetType(e.target.value)}>
+      <label>
+        Asset type:
+        <select
+          value={assetType}
+          onChange={(e) => setAssetType(e.target.value)}
+        >
           <option value="stocks">Stocks</option>
           <option value="mutual_funds">Mutual Funds</option>
           <option value="gold">Gold</option>
@@ -69,18 +98,35 @@ function App() {
           <option value="other">Other</option>
         </select>
       </label>
-      <br/>
-      <label>Month:
-        <input type="month" value={month} onChange={e=>setMonth(e.target.value)} />
+      <br />
+      <br />
+
+      <label>
+        Month:
+        <input
+          type="month"
+          value={month}
+          onChange={(e) => setMonth(e.target.value)}
+        />
       </label>
-      <br/>
-      <label>Value:
-        <input value={value} onChange={e=>setValue(e.target.value)} />
+      <br />
+      <br />
+
+      <label>
+        Value:
+        <input
+          type="number"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          placeholder="e.g. 1000"
+        />
       </label>
-      <br/>
-      <button onClick={saveEntry}>Save</button>
+      <br />
+      <br />
+
+      <button onClick={saveEntry} disabled={loading}>
+        {loading ? "Saving…" : "Save"}
+      </button>
     </div>
   );
 }
-
-export default App;
