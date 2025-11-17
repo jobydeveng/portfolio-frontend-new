@@ -35,7 +35,7 @@ function App() {
       assetType, value: Number(value), month
     };
 
-    const res = await fetch('http://localhost:8000/save', { // change to deployed backend later
+    const res = await fetch('https://portfolio-backend-qj1o.onrender.com/save', { // change to deployed backend later
       method: 'POST',
       headers: {
         'Content-Type':'application/json',
